@@ -84,6 +84,9 @@ export class SignInButton extends React.Component<SignInButtonProps> {
   }
 
   render() {
+    if (!config.VITE_FIREBASE_CONFIG) {
+      return null;
+    }
     if (this.context.user) {
       return (
         <div

@@ -6,5 +6,6 @@ export default {
     import.meta.env.VITE_FIREBASE_CONFIG ??
     '{"apiKey":"AIzaSyA2fkXeFokJ-Ei_jnzDso5AmjbIaMdzuEc","authDomain":"watchparty-273604.firebaseapp.com","databaseURL":"https://watchparty-273604.firebaseio.com","projectId":"watchparty-273604","storageBucket":"watchparty-273604.appspot.com","messagingSenderId":"769614672795","appId":"1:769614672795:web:54bbda86288ab1a034273e"}',
   VITE_FIREBASE_SIGNIN_METHODS: "facebook,google,email",
+  VITE_ENABLE_VBROWSER: import.meta.env.VITE_ENABLE_VBROWSER === "true",
   NODE_ENV: import.meta.env.DEV ? "development" : "production",
 };

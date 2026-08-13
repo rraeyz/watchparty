@@ -2215,7 +2215,8 @@ export class App extends React.Component<AppProps, AppState> {
                             Screenshare
                           </Button>
                         )}
-                      {!this.localStreamToPublish &&
+                      {config.VITE_ENABLE_VBROWSER &&
+                        !this.localStreamToPublish &&
                         !sharer &&
                         !this.playingVBrowser() && (
                           <Button
