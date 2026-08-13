@@ -60,7 +60,7 @@
     "hls.js": "^1.6.15",
     "mediasoup-client": "^3.18.1",
     "react": "^18.3.1",
-    "react-colorful": "^5.6.1",
+    "react-colorful": "^5.8.0",
     "react-countup": "^6.5.3",
     "react-dom": "^18.3.1",
     "react-linkify": "^1.0.0-alpha",
