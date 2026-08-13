@@ -55,7 +55,7 @@
     "@types/youtube": "^0.1.2",
     "can-autoplay": "^3.0.2",
     "dashjs": "^5.1.0",
-    "eventemitter3": "^4.0.7",
+    "eventemitter3": "^5.0.4",
     "firebase": "^9.23.0",
     "hls.js": "^1.6.15",
     "mediasoup-client": "^3.18.1",
