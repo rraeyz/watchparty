@@ -1,5 +1,19 @@
 # WatchParty
 
+> **Fork bilgisi:** Bu depo, [howardchung/watchparty](https://github.com/howardchung/watchparty)
+> projesinin bir fork'udur. Orijinal proje MIT lisansı altındadır ve tüm hakları
+> orijinal yazarlarına aittir. Bu fork, kişisel kullanım ve YunoHost entegrasyonu
+> için özelleştirilmektedir.
+>
+> - Orijinal proje: https://github.com/howardchung/watchparty
+> - Orijinal site: https://www.watchparty.me
+> - YunoHost paketi: https://github.com/rraeyz/watchparty_ynh
+>
+> Orijinal projeden güncelleme çekmek için:
+> ```bash
+> git fetch upstream && git merge upstream/master
+> ```
+
 ![screenshot](https://github.com/howardchung/watchparty/raw/master/public/screenshot_full.png)
 
 A website for watching videos together.
