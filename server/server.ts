@@ -218,9 +218,9 @@ app.get("/searchSubtitles", async (req, res) => {
       let hash = computeOpenSubtitlesHash(start, end, size);
       // hash = 'f65334e75574f00f';
       // Search API for subtitles by hash
-      subUrl = `https://api.opensubtitles.com/api/v1/subtitles?moviehash=${hash}&languages=en`;
+      subUrl = `https://api.opensubtitles.com/api/v1/subtitles?moviehash=${hash}&languages=${config.SUBTITLE_LANGUAGES}`;
     } else if (title) {
-      subUrl = `https://api.opensubtitles.com/api/v1/subtitles?query=${title}&languages=en`;
+      subUrl = `https://api.opensubtitles.com/api/v1/subtitles?query=${title}&languages=${config.SUBTITLE_LANGUAGES}`;
     }
     // Alternative, web client calls this to get back some JS with the download URL embedded
     // https://www.opensubtitles.com/nocache/download/7585196/subreq.js?file_name=Borgen.S04E01.en&locale=en&np=true&sub_frmt=srt&subtitle_id=6615808&ext_installed=false

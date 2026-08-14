@@ -43,7 +43,14 @@ export class VideoChat extends React.Component<VideoChatProps> {
   state = {
     pushToTalk: localStorage.getItem("wp-push-to-talk") === "true",
     pttActive: false,
+    // Map of participant id -> whether they're currently speaking
+    speaking: {} as { [id: string]: boolean },
   };
+
+  // Web Audio plumbing for the speaking indicator
+  audioContext?: AudioContext;
+  analysers: { [id: string]: AnalyserNode } = {};
+  speakingRAF?: number;
 
   componentDidMount() {
     this.socket.on("signal", this.handleSignal);
@@ -57,7 +64,70 @@ export class VideoChat extends React.Component<VideoChatProps> {
     window.removeEventListener("keydown", this.handlePttKeyDown);
     window.removeEventListener("keyup", this.handlePttKeyUp);
     window.removeEventListener("blur", this.handlePttRelease);
+    this.stopSpeakingDetection();
   }
+
+  //=================================================
+  // SPEAKING INDICATOR
+  //=================================================
+  // Attach an analyser to a stream so we can tell when that person is talking.
+  watchStreamForSpeech = (id: string, stream: MediaStream) => {
+    if (!stream.getAudioTracks().length || this.analysers[id]) {
+      return;
+    }
+    try {
+      if (!this.audioContext) {
+        this.audioContext = new AudioContext();
+      }
+      const source = this.audioContext.createMediaStreamSource(stream);
+      const analyser = this.audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.4;
+      source.connect(analyser);
+      this.analysers[id] = analyser;
+      this.startSpeakingDetection();
+    } catch (e) {
+      console.warn("speaking detection unavailable", e);
+    }
+  };
+
+  startSpeakingDetection = () => {
+    if (this.speakingRAF) {
+      return;
+    }
+    const buffer = new Uint8Array(256);
+    const tick = () => {
+      const speaking: { [id: string]: boolean } = {};
+      Object.entries(this.analysers).forEach(([id, analyser]) => {
+        analyser.getByteFrequencyData(buffer);
+        const bins = analyser.frequencyBinCount;
+        let sum = 0;
+        for (let i = 0; i < bins; i++) {
+          sum += buffer[i];
+        }
+        // Rough loudness threshold — high enough to ignore background hiss
+        speaking[id] = sum / bins > 12;
+      });
+      const changed = Object.keys(speaking).some(
+        (id) => speaking[id] !== this.state.speaking[id],
+      );
+      if (changed) {
+        this.setState({ speaking });
+      }
+      this.speakingRAF = requestAnimationFrame(tick);
+    };
+    this.speakingRAF = requestAnimationFrame(tick);
+  };
+
+  stopSpeakingDetection = () => {
+    if (this.speakingRAF) {
+      cancelAnimationFrame(this.speakingRAF);
+      this.speakingRAF = undefined;
+    }
+    this.analysers = {};
+    this.audioContext?.close();
+    this.audioContext = undefined;
+  };
 
   componentDidUpdate(prevProps: VideoChatProps) {
     if (this.props.rosterUpdateTS !== prevProps.rosterUpdateTS) {
@@ -200,6 +270,7 @@ export class VideoChat extends React.Component<VideoChatProps> {
     // alert server we've joined video chat
     this.socket.emit("CMD:joinVideo");
     this.emitUserMute();
+    this.watchStreamForSpeech(getOrCreateClientId(), stream);
   };
 
   stopWebRTC = () => {
@@ -300,6 +371,7 @@ export class VideoChat extends React.Component<VideoChatProps> {
           // Mount the stream from peer
           // console.log(stream);
           videoRefs[id].srcObject = event.streams[0];
+          this.watchStreamForSpeech(id, event.streams[0]);
         };
         pc.oniceconnectionstatechange = () => {
           if (pc.iceConnectionState === "failed") {
@@ -357,6 +429,12 @@ export class VideoChat extends React.Component<VideoChatProps> {
               <div
                 style={{
                   position: "relative",
+                  // Highlight whoever is currently talking
+                  outline: this.state.speaking[p.id]
+                    ? "3px solid #3fb950"
+                    : "3px solid transparent",
+                  borderRadius: "4px",
+                  transition: "outline-color 0.12s ease-out",
                 }}
               >
                 <div>
