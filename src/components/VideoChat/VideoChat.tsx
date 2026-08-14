@@ -414,15 +414,89 @@ export class VideoChat extends React.Component<VideoChatProps> {
     };
     const selfId = getOrCreateClientId();
     return (
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "center",
-          gap: "4px",
-          padding: "4px",
-        }}
-      >
+      <>
+        {/* Floating mic control — stays reachable in fullscreen and on mobile,
+            where the People panel isn't visible. */}
+        {ourStream && (
+          <div
+            style={{
+              position: "fixed",
+              left: "12px",
+              bottom: "12px",
+              zIndex: 9999,
+              display: "flex",
+              gap: "6px",
+              padding: "6px",
+              borderRadius: "8px",
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <ActionIcon
+              size="lg"
+              color={this.getAudioWebRTC() ? "green" : "red"}
+              onClick={this.toggleAudioWebRTC}
+              disabled={this.state.pushToTalk}
+              title={
+                this.state.pushToTalk
+                  ? "Push-to-talk is on — hold Space to talk"
+                  : "Toggle microphone"
+              }
+            >
+              <IconMicrophone />
+            </ActionIcon>
+            <ActionIcon
+              size="lg"
+              color={
+                !this.state.pushToTalk
+                  ? "gray"
+                  : this.state.pttActive
+                    ? "green"
+                    : "yellow"
+              }
+              onClick={this.togglePushToTalk}
+              onMouseDown={
+                this.state.pushToTalk
+                  ? () => {
+                      this.setState({ pttActive: true });
+                      this.setMicEnabled(true);
+                    }
+                  : undefined
+              }
+              onMouseUp={
+                this.state.pushToTalk ? this.handlePttRelease : undefined
+              }
+              onTouchStart={
+                this.state.pushToTalk
+                  ? (e: React.TouchEvent) => {
+                      e.preventDefault();
+                      this.setState({ pttActive: true });
+                      this.setMicEnabled(true);
+                    }
+                  : undefined
+              }
+              onTouchEnd={
+                this.state.pushToTalk ? this.handlePttRelease : undefined
+              }
+              title={
+                this.state.pushToTalk
+                  ? "Push-to-talk: hold Space, or hold this button"
+                  : "Switch to push-to-talk"
+              }
+            >
+              <IconKeyboard />
+            </ActionIcon>
+          </div>
+        )}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: "4px",
+            padding: "4px",
+          }}
+        >
         {participants.map((p) => {
           return (
             <div key={p.id}>
@@ -623,7 +697,8 @@ export class VideoChat extends React.Component<VideoChatProps> {
             </div>
           );
         })}
-      </div>
+        </div>
+      </>
     );
   }
 }
