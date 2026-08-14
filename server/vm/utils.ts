@@ -5,8 +5,11 @@ import { Hetzner } from "./hetzner.ts";
 import { DigitalOcean } from "./digitalocean.ts";
 import { Docker } from "./docker.ts";
 
-// Chromium on ARM: ghcr.io/howardchung/vbrowser/arm-chromium
-export const imageName = "howardc93/vbrowser";
+// The neko image used for virtual browser sessions.
+// Overridable because the upstream default is amd64-only; on ARM64 use e.g.
+// ghcr.io/m1k1o/neko/firefox (Firefox needs no SYS_ADMIN and less shared memory
+// than Chromium-based images, so it's the safer default on small servers).
+export const imageName = config.VBROWSER_IMAGE || "howardc93/vbrowser";
 
 export type PoolRegion = "US" | "USW" | "EU";
 export type PoolConfig = {

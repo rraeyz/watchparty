@@ -6,6 +6,33 @@ import { imageName } from "./utils.ts";
 import fs from "node:fs";
 import { homedir } from "node:os";
 import { NodeSSH } from "node-ssh";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
+
+// Matches the subset of NodeSSH we actually use, so the rest of this class
+// doesn't care whether commands run over SSH or on the local Docker socket.
+type CommandRunner = {
+  execCommand: (
+    cmd: string,
+  ) => Promise<{ stdout: string; stderr: string }>;
+};
+
+// When the app already has access to the Docker socket (e.g. it's mounted into
+// the container), running commands locally avoids needing SSH keys entirely.
+const localRunner: CommandRunner = {
+  execCommand: async (cmd: string) => {
+    try {
+      const { stdout, stderr } = await execAsync(cmd, {
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      return { stdout, stderr };
+    } catch (e: any) {
+      return { stdout: e?.stdout ?? "", stderr: e?.stderr ?? String(e) };
+    }
+  },
+};
 
 export class Docker extends VMManager {
   // TODO support multiple Docker providers in the pool config with same region
@@ -17,7 +44,10 @@ export class Docker extends VMManager {
   ssh: NodeSSH | undefined = undefined;
   imageId = imageName;
 
-  getSSH = async () => {
+  getSSH = async (): Promise<CommandRunner> => {
+    if (config.VBROWSER_USE_DOCKER_SOCKET) {
+      return localRunner;
+    }
     if (this.ssh && this.ssh.isConnected()) {
       return this.ssh;
     }
@@ -37,12 +67,12 @@ export class Docker extends VMManager {
   startVM = async (name: string) => {
     const tag = this.getTag();
     const conn = await this.getSSH();
-    // If in development, have neko share the same SSL cert as the other services
-    // If in production, they are probably on different hosts and neko is behind a reverse proxy for SSL termination
+    // Neko serves its own TLS when we point it at a cert. That's necessary
+    // because the page is loaded over https and browsers refuse to open an
+    // insecure websocket from it. Mounting the host's letsencrypt dir (below)
+    // lets it reuse the domain's existing certificate.
     const sslEnv =
-      config.NODE_ENV === "development" &&
-      config.SSL_KEY_FILE &&
-      config.SSL_CRT_FILE
+      config.SSL_KEY_FILE && config.SSL_CRT_FILE
         ? `-e NEKO_KEY="${config.SSL_KEY_FILE}" -e NEKO_CERT="${config.SSL_CRT_FILE}"`
         : "";
     const { stdout, stderr } = await conn.execCommand(

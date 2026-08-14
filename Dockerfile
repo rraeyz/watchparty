@@ -1,6 +1,8 @@
 FROM node:24-alpine
 
-RUN apk add --no-cache python3 make g++ git
+# bash/iproute2/docker-cli are needed by the virtual browser manager, which
+# picks a free port and launches neko containers on the host's Docker socket.
+RUN apk add --no-cache python3 make g++ git bash iproute2 docker-cli
 
 WORKDIR /usr/src
 

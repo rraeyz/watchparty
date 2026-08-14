@@ -60,6 +60,8 @@ const defaults = {
   MEDIASOUP_SERVER: "", // Optional, URL of the MediaSoup server to broadcast to for larger screen/file shares
   TWITCH_PROXY_PATH: "", // Optional, URL of the server that can proxy twitch HLS stream playlists and segments
   VBROWSER_ADMIN_KEY: "", // Optional, the key to hit admin endpoints on the vbrowser
+  VBROWSER_IMAGE: "", // Optional, override the neko image (ARM64: ghcr.io/m1k1o/neko/firefox)
+  VBROWSER_USE_DOCKER_SOCKET: "", // Set to "1" to run docker locally instead of over SSH
   OPENSUBTITLES_KEY: "", // Optional, key to OpenSubtitles API
   SUBTITLE_LANGUAGES: "tr,en", // Comma-separated language codes to search subtitles for
 };
