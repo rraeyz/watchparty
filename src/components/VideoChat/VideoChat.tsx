@@ -14,6 +14,7 @@ import { UserMenu } from "../UserMenu/UserMenu";
 import { MetadataContext } from "../../MetadataContext";
 import {
   IconDotsVertical,
+  IconKeyboard,
   IconMicrophone,
   IconScreenShare,
   IconVideo,
@@ -38,12 +39,24 @@ export class VideoChat extends React.Component<VideoChatProps> {
 
   socket = this.props.socket;
 
+  // Push-to-talk: when on, the mic stays muted until the hotkey is held down.
+  state = {
+    pushToTalk: localStorage.getItem("wp-push-to-talk") === "true",
+    pttActive: false,
+  };
+
   componentDidMount() {
     this.socket.on("signal", this.handleSignal);
+    window.addEventListener("keydown", this.handlePttKeyDown);
+    window.addEventListener("keyup", this.handlePttKeyUp);
+    window.addEventListener("blur", this.handlePttRelease);
   }
 
   componentWillUnmount() {
     this.socket.off("signal", this.handleSignal);
+    window.removeEventListener("keydown", this.handlePttKeyDown);
+    window.removeEventListener("keyup", this.handlePttKeyUp);
+    window.removeEventListener("blur", this.handlePttRelease);
   }
 
   componentDidUpdate(prevProps: VideoChatProps) {
@@ -54,6 +67,64 @@ export class VideoChat extends React.Component<VideoChatProps> {
 
   emitUserMute = () => {
     this.socket.emit("CMD:userMute", { isMuted: !this.getAudioWebRTC() });
+  };
+
+  //=================================================
+  // PUSH TO TALK
+  //=================================================
+  setMicEnabled = (enabled: boolean) => {
+    const ourStream = window.watchparty.ourStream;
+    const track = ourStream?.getAudioTracks()[0];
+    if (!track || track.enabled === enabled) {
+      return;
+    }
+    track.enabled = enabled;
+    this.emitUserMute();
+    this.forceUpdate();
+  };
+
+  isPttHotkey = (e: KeyboardEvent) => {
+    // Space is the hotkey, but not while the user is typing in the chat box.
+    const target = e.target as HTMLElement | null;
+    const typing =
+      target?.tagName === "INPUT" ||
+      target?.tagName === "TEXTAREA" ||
+      target?.isContentEditable;
+    return e.code === "Space" && !typing;
+  };
+
+  handlePttKeyDown = (e: KeyboardEvent) => {
+    if (!this.state.pushToTalk || e.repeat || !this.isPttHotkey(e)) {
+      return;
+    }
+    // Stop space from also toggling video playback
+    e.preventDefault();
+    this.setState({ pttActive: true });
+    this.setMicEnabled(true);
+  };
+
+  handlePttKeyUp = (e: KeyboardEvent) => {
+    if (!this.state.pushToTalk || !this.isPttHotkey(e)) {
+      return;
+    }
+    e.preventDefault();
+    this.handlePttRelease();
+  };
+
+  handlePttRelease = () => {
+    if (!this.state.pushToTalk) {
+      return;
+    }
+    this.setState({ pttActive: false });
+    this.setMicEnabled(false);
+  };
+
+  togglePushToTalk = () => {
+    const next = !this.state.pushToTalk;
+    localStorage.setItem("wp-push-to-talk", String(next));
+    this.setState({ pushToTalk: next, pttActive: false });
+    // Entering PTT mutes until the key is held; leaving it opens the mic again.
+    this.setMicEnabled(!next);
   };
 
   handleSignal = async (data: any) => {
@@ -119,6 +190,13 @@ export class VideoChat extends React.Component<VideoChatProps> {
       }
     }
     window.watchparty.ourStream = stream;
+    // If push-to-talk is on, start muted — the hotkey opens the mic.
+    if (this.state.pushToTalk) {
+      const track = stream.getAudioTracks()[0];
+      if (track) {
+        track.enabled = false;
+      }
+    }
     // alert server we've joined video chat
     this.socket.emit("CMD:joinVideo");
     this.emitUserMute();
@@ -348,8 +426,31 @@ export class VideoChat extends React.Component<VideoChatProps> {
                         <ActionIcon
                           color={this.getAudioWebRTC() ? "green" : "red"}
                           onClick={this.toggleAudioWebRTC}
+                          disabled={this.state.pushToTalk}
+                          title={
+                            this.state.pushToTalk
+                              ? "Push-to-talk is on — hold Space to talk"
+                              : "Toggle microphone"
+                          }
                         >
                           <IconMicrophone />
+                        </ActionIcon>
+                        <ActionIcon
+                          color={
+                            !this.state.pushToTalk
+                              ? "gray"
+                              : this.state.pttActive
+                                ? "green"
+                                : "yellow"
+                          }
+                          onClick={this.togglePushToTalk}
+                          title={
+                            this.state.pushToTalk
+                              ? "Push-to-talk on (hold Space). Click to switch to open mic."
+                              : "Switch to push-to-talk (hold Space to talk)"
+                          }
+                        >
+                          <IconKeyboard />
                         </ActionIcon>
                       </>
                     )}
