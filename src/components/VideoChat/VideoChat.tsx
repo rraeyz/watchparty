@@ -12,6 +12,7 @@ import {
 } from "../../utils/utils";
 import { UserMenu } from "../UserMenu/UserMenu";
 import { MetadataContext } from "../../MetadataContext";
+import * as mic from "../../utils/mic";
 import {
   IconDotsVertical,
   IconKeyboard,
@@ -41,8 +42,6 @@ export class VideoChat extends React.Component<VideoChatProps> {
 
   // Push-to-talk: when on, the mic stays muted until the hotkey is held down.
   state = {
-    pushToTalk: localStorage.getItem("wp-push-to-talk") === "true",
-    pttActive: false,
     // Map of participant id -> whether they're currently speaking
     speaking: {} as { [id: string]: boolean },
   };
@@ -54,16 +53,14 @@ export class VideoChat extends React.Component<VideoChatProps> {
 
   componentDidMount() {
     this.socket.on("signal", this.handleSignal);
-    window.addEventListener("keydown", this.handlePttKeyDown);
-    window.addEventListener("keyup", this.handlePttKeyUp);
-    window.addEventListener("blur", this.handlePttRelease);
+    this.unsubscribeMic = mic.subscribeMic(() => this.forceUpdate());
   }
+
+  unsubscribeMic?: () => void;
 
   componentWillUnmount() {
     this.socket.off("signal", this.handleSignal);
-    window.removeEventListener("keydown", this.handlePttKeyDown);
-    window.removeEventListener("keyup", this.handlePttKeyUp);
-    window.removeEventListener("blur", this.handlePttRelease);
+    this.unsubscribeMic?.();
     this.stopSpeakingDetection();
   }
 
@@ -140,61 +137,75 @@ export class VideoChat extends React.Component<VideoChatProps> {
   };
 
   //=================================================
-  // PUSH TO TALK
+  // SPEAKING INDICATOR
   //=================================================
-  setMicEnabled = (enabled: boolean) => {
-    const ourStream = window.watchparty.ourStream;
-    const track = ourStream?.getAudioTracks()[0];
-    if (!track || track.enabled === enabled) {
+  // Attach an analyser to a stream so we can tell when that person is talking.
+  watchStreamForSpeech = (id: string, stream: MediaStream) => {
+    if (!stream.getAudioTracks().length || this.analysers[id]) {
       return;
     }
-    track.enabled = enabled;
-    this.emitUserMute();
-    this.forceUpdate();
+    try {
+      if (!this.audioContext) {
+        this.audioContext = new AudioContext();
+      }
+      const source = this.audioContext.createMediaStreamSource(stream);
+      const analyser = this.audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.4;
+      source.connect(analyser);
+      this.analysers[id] = analyser;
+      this.startSpeakingDetection();
+    } catch (e) {
+      console.warn("speaking detection unavailable", e);
+    }
   };
 
-  isPttHotkey = (e: KeyboardEvent) => {
-    // Space is the hotkey, but not while the user is typing in the chat box.
-    const target = e.target as HTMLElement | null;
-    const typing =
-      target?.tagName === "INPUT" ||
-      target?.tagName === "TEXTAREA" ||
-      target?.isContentEditable;
-    return e.code === "Space" && !typing;
-  };
-
-  handlePttKeyDown = (e: KeyboardEvent) => {
-    if (!this.state.pushToTalk || e.repeat || !this.isPttHotkey(e)) {
+  startSpeakingDetection = () => {
+    if (this.speakingRAF) {
       return;
     }
-    // Stop space from also toggling video playback
-    e.preventDefault();
-    this.setState({ pttActive: true });
-    this.setMicEnabled(true);
+    const buffer = new Uint8Array(256);
+    const tick = () => {
+      const speaking: { [id: string]: boolean } = {};
+      Object.entries(this.analysers).forEach(([id, analyser]) => {
+        analyser.getByteFrequencyData(buffer);
+        const bins = analyser.frequencyBinCount;
+        let sum = 0;
+        for (let i = 0; i < bins; i++) {
+          sum += buffer[i];
+        }
+        // Rough loudness threshold — high enough to ignore background hiss
+        speaking[id] = sum / bins > 12;
+      });
+      const changed = Object.keys(speaking).some(
+        (id) => speaking[id] !== this.state.speaking[id],
+      );
+      if (changed) {
+        this.setState({ speaking });
+      }
+      this.speakingRAF = requestAnimationFrame(tick);
+    };
+    this.speakingRAF = requestAnimationFrame(tick);
   };
 
-  handlePttKeyUp = (e: KeyboardEvent) => {
-    if (!this.state.pushToTalk || !this.isPttHotkey(e)) {
-      return;
+  stopSpeakingDetection = () => {
+    if (this.speakingRAF) {
+      cancelAnimationFrame(this.speakingRAF);
+      this.speakingRAF = undefined;
     }
-    e.preventDefault();
-    this.handlePttRelease();
+    this.analysers = {};
+    this.audioContext?.close();
+    this.audioContext = undefined;
   };
 
-  handlePttRelease = () => {
-    if (!this.state.pushToTalk) {
-      return;
+  componentDidUpdate(prevProps: VideoChatProps) {
+    if (this.props.rosterUpdateTS !== prevProps.rosterUpdateTS) {
+      this.updateWebRTC();
     }
-    this.setState({ pttActive: false });
-    this.setMicEnabled(false);
-  };
+  }
 
-  togglePushToTalk = () => {
-    const next = !this.state.pushToTalk;
-    localStorage.setItem("wp-push-to-talk", String(next));
-    this.setState({ pushToTalk: next, pttActive: false });
-    // Entering PTT mutes until the key is held; leaving it opens the mic again.
-    this.setMicEnabled(!next);
+  emitUserMute = () => {
+    this.socket.emit("CMD:userMute", { isMuted: !this.getAudioWebRTC() });
   };
 
   handleSignal = async (data: any) => {
@@ -261,7 +272,7 @@ export class VideoChat extends React.Component<VideoChatProps> {
     }
     window.watchparty.ourStream = stream;
     // If push-to-talk is on, start muted — the hotkey opens the mic.
-    if (this.state.pushToTalk) {
+    if (mic.isPushToTalk()) {
       const track = stream.getAudioTracks()[0];
       if (track) {
         track.enabled = false;
@@ -303,11 +314,8 @@ export class VideoChat extends React.Component<VideoChatProps> {
   };
 
   toggleAudioWebRTC = () => {
-    const ourStream = window.watchparty.ourStream;
-    if (ourStream && ourStream.getAudioTracks()[0]) {
-      ourStream.getAudioTracks()[0].enabled =
-        !ourStream.getAudioTracks()[0]?.enabled;
-    }
+    // Route through the shared module so the chat-row buttons stay in sync
+    mic.toggleMic();
     this.emitUserMute();
     this.forceUpdate();
   };
@@ -415,79 +423,6 @@ export class VideoChat extends React.Component<VideoChatProps> {
     const selfId = getOrCreateClientId();
     return (
       <>
-        {/* Floating mic control — stays reachable in fullscreen and on mobile,
-            where the People panel isn't visible. */}
-        {ourStream && (
-          <div
-            style={{
-              position: "fixed",
-              left: "12px",
-              bottom: "12px",
-              zIndex: 9999,
-              display: "flex",
-              gap: "6px",
-              padding: "6px",
-              borderRadius: "8px",
-              background: "rgba(0,0,0,0.55)",
-              backdropFilter: "blur(4px)",
-            }}
-          >
-            <ActionIcon
-              size="lg"
-              color={this.getAudioWebRTC() ? "green" : "red"}
-              onClick={this.toggleAudioWebRTC}
-              disabled={this.state.pushToTalk}
-              title={
-                this.state.pushToTalk
-                  ? "Push-to-talk is on — hold Space to talk"
-                  : "Toggle microphone"
-              }
-            >
-              <IconMicrophone />
-            </ActionIcon>
-            <ActionIcon
-              size="lg"
-              color={
-                !this.state.pushToTalk
-                  ? "gray"
-                  : this.state.pttActive
-                    ? "green"
-                    : "yellow"
-              }
-              onClick={this.togglePushToTalk}
-              onMouseDown={
-                this.state.pushToTalk
-                  ? () => {
-                      this.setState({ pttActive: true });
-                      this.setMicEnabled(true);
-                    }
-                  : undefined
-              }
-              onMouseUp={
-                this.state.pushToTalk ? this.handlePttRelease : undefined
-              }
-              onTouchStart={
-                this.state.pushToTalk
-                  ? (e: React.TouchEvent) => {
-                      e.preventDefault();
-                      this.setState({ pttActive: true });
-                      this.setMicEnabled(true);
-                    }
-                  : undefined
-              }
-              onTouchEnd={
-                this.state.pushToTalk ? this.handlePttRelease : undefined
-              }
-              title={
-                this.state.pushToTalk
-                  ? "Push-to-talk: hold Space, or hold this button"
-                  : "Switch to push-to-talk"
-              }
-            >
-              <IconKeyboard />
-            </ActionIcon>
-          </div>
-        )}
         <div
           style={{
             display: "flex",
@@ -578,9 +513,9 @@ export class VideoChat extends React.Component<VideoChatProps> {
                         <ActionIcon
                           color={this.getAudioWebRTC() ? "green" : "red"}
                           onClick={this.toggleAudioWebRTC}
-                          disabled={this.state.pushToTalk}
+                          disabled={mic.isPushToTalk()}
                           title={
-                            this.state.pushToTalk
+                            mic.isPushToTalk()
                               ? "Push-to-talk is on — hold Space to talk"
                               : "Toggle microphone"
                           }
@@ -589,15 +524,15 @@ export class VideoChat extends React.Component<VideoChatProps> {
                         </ActionIcon>
                         <ActionIcon
                           color={
-                            !this.state.pushToTalk
+                            !mic.isPushToTalk()
                               ? "gray"
-                              : this.state.pttActive
+                              : mic.isPttActive()
                                 ? "green"
                                 : "yellow"
                           }
-                          onClick={this.togglePushToTalk}
+                          onClick={mic.togglePushToTalk}
                           title={
-                            this.state.pushToTalk
+                            mic.isPushToTalk()
                               ? "Push-to-talk on (hold Space). Click to switch to open mic."
                               : "Switch to push-to-talk (hold Space to talk)"
                           }

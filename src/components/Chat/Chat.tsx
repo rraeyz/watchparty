@@ -23,6 +23,8 @@ import {
   isEmojiString,
 } from "../../utils/utils";
 import { UserMenu } from "../UserMenu/UserMenu";
+import * as mic from "../../utils/mic";
+import { IconKeyboard, IconMicrophone, IconSend } from "@tabler/icons-react";
 import { Socket } from "socket.io-client";
 import {
   CSSTransition,
@@ -74,7 +76,51 @@ export class Chat extends React.Component<ChatProps> {
     this.scrollToBottom();
     this.messagesRef.current?.addEventListener("scroll", this.onScroll);
     init({});
+    // Re-render the mic buttons when the shared mic state changes
+    this.unsubscribeMic = mic.subscribeMic(() => this.forceUpdate());
+    window.addEventListener("keydown", this.handlePttKeyDown);
+    window.addEventListener("keyup", this.handlePttKeyUp);
+    window.addEventListener("blur", this.handlePttBlur);
   }
+
+  unsubscribeMic?: () => void;
+
+  componentWillUnmount() {
+    this.unsubscribeMic?.();
+    window.removeEventListener("keydown", this.handlePttKeyDown);
+    window.removeEventListener("keyup", this.handlePttKeyUp);
+    window.removeEventListener("blur", this.handlePttBlur);
+  }
+
+  // Space is the push-to-talk hotkey, except while typing
+  isPttHotkey = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    const typing =
+      target?.tagName === "INPUT" ||
+      target?.tagName === "TEXTAREA" ||
+      target?.isContentEditable;
+    return e.code === "Space" && !typing;
+  };
+
+  handlePttKeyDown = (e: KeyboardEvent) => {
+    if (!mic.isPushToTalk() || e.repeat || !this.isPttHotkey(e)) {
+      return;
+    }
+    e.preventDefault();
+    mic.setPttActive(true);
+  };
+
+  handlePttKeyUp = (e: KeyboardEvent) => {
+    if (!mic.isPushToTalk() || !this.isPttHotkey(e)) {
+      return;
+    }
+    e.preventDefault();
+    mic.setPttActive(false);
+  };
+
+  handlePttBlur = () => {
+    mic.setPttActive(false);
+  };
 
   componentDidUpdate(prevProps: ChatProps) {
     if (this.props.scrollTimestamp !== prevProps.scrollTimestamp) {
@@ -394,19 +440,93 @@ export class Chat extends React.Component<ChatProps> {
               : "Enter a message..."
           }
           rightSection={
-            <ActionIcon
-              onClick={() => {
-                // Add a delay to prevent the click from triggering onClickOutside
-                const curr = this.state.isPickerOpen;
-                setTimeout(() => this.setState({ isPickerOpen: !curr }), 100);
-              }}
-              disabled={this.props.isChatDisabled}
-            >
-              <span role="img" aria-label="Emoji">
-                😀
-              </span>
-            </ActionIcon>
+            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+              {mic.isInVoiceChat() && (
+                <>
+                  <ActionIcon
+                    variant="subtle"
+                    color={mic.isMicOn() ? "green" : "red"}
+                    onClick={mic.toggleMic}
+                    disabled={mic.isPushToTalk()}
+                    title={
+                      mic.isPushToTalk()
+                        ? "Push-to-talk is on"
+                        : "Toggle microphone"
+                    }
+                  >
+                    <IconMicrophone size={18} />
+                  </ActionIcon>
+                  <ActionIcon
+                    variant="subtle"
+                    color={
+                      !mic.isPushToTalk()
+                        ? "gray"
+                        : mic.isPttActive()
+                          ? "green"
+                          : "yellow"
+                    }
+                    onClick={mic.togglePushToTalk}
+                    onMouseDown={
+                      mic.isPushToTalk()
+                        ? () => mic.setPttActive(true)
+                        : undefined
+                    }
+                    onMouseUp={
+                      mic.isPushToTalk()
+                        ? () => mic.setPttActive(false)
+                        : undefined
+                    }
+                    onTouchStart={
+                      mic.isPushToTalk()
+                        ? (e: React.TouchEvent) => {
+                            e.preventDefault();
+                            mic.setPttActive(true);
+                          }
+                        : undefined
+                    }
+                    onTouchEnd={
+                      mic.isPushToTalk()
+                        ? () => mic.setPttActive(false)
+                        : undefined
+                    }
+                    title={
+                      mic.isPushToTalk()
+                        ? "Push-to-talk: hold Space or hold this button"
+                        : "Switch to push-to-talk"
+                    }
+                  >
+                    <IconKeyboard size={18} />
+                  </ActionIcon>
+                </>
+              )}
+              <ActionIcon
+                variant="subtle"
+                onClick={() => {
+                  // Add a delay to prevent the click from triggering onClickOutside
+                  const curr = this.state.isPickerOpen;
+                  setTimeout(() => this.setState({ isPickerOpen: !curr }), 100);
+                }}
+                disabled={this.props.isChatDisabled}
+                title="Emoji"
+              >
+                <span role="img" aria-label="Emoji">
+                  😀
+                </span>
+              </ActionIcon>
+              <ActionIcon
+                variant="filled"
+                color="blue"
+                onClick={this.sendChatMsg}
+                disabled={
+                  this.props.isChatDisabled || !this.state.chatMsg.trim()
+                }
+                title="Send"
+              >
+                <IconSend size={18} />
+              </ActionIcon>
+            </div>
           }
+          rightSectionWidth={mic.isInVoiceChat() ? 132 : 74}
         >
           {/* <Icon onClick={this.sendChatMsg} name="send" inverted circular link /> */}
         </TextInput>
