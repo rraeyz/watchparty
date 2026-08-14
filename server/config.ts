@@ -63,7 +63,22 @@ const defaults = {
   OPENSUBTITLES_KEY: "", // Optional, key to OpenSubtitles API
 };
 
-export default {
+// Environment variables always arrive as strings, so a numeric setting like
+// ROOM_CAPACITY=0 would come through as "0" — which is truthy in JS and would
+// silently cap rooms at zero users. Coerce anything that defaults to a number
+// back to a number after merging.
+const merged: Record<string, any> = {
   ...defaults,
   ...process.env,
 };
+
+for (const key of Object.keys(defaults)) {
+  if (typeof (defaults as Record<string, any>)[key] === "number") {
+    const value = Number(merged[key]);
+    merged[key] = Number.isNaN(value)
+      ? (defaults as Record<string, any>)[key]
+      : value;
+  }
+}
+
+export default merged as typeof defaults & Record<string, any>;
