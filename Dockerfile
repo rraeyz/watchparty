@@ -14,4 +14,6 @@ COPY . .
 
 RUN npm run build
 
-ENTRYPOINT ["/bin/sh", "-c" , "npm start"]
+RUN chmod +x docker-entrypoint.sh
+
+ENTRYPOINT ["./docker-entrypoint.sh"]
