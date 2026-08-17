@@ -26,9 +26,13 @@ const localRunner: CommandRunner = {
     try {
       const { stdout, stderr } = await execAsync(cmd, {
         maxBuffer: 10 * 1024 * 1024,
+        // The startVM script uses process substitution, which is bash-only —
+        // the default /bin/sh is busybox ash on Alpine and would fail silently.
+        shell: "/bin/bash",
       });
       return { stdout, stderr };
     } catch (e: any) {
+      console.error("[DOCKER] command failed:", e?.message);
       return { stdout: e?.stdout ?? "", stderr: e?.stderr ?? String(e) };
     }
   },
@@ -83,14 +87,22 @@ export class Docker extends VMManager {
       `
       #!/bin/bash
       set -e
-      PORT=$(comm -23 <(seq 5000 5063 | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | sort -n | head -n 1)
+      # Find a free port in 5000-5063. Ask Docker which ones it has published
+      # rather than using ss: when this runs inside a container, ss only sees
+      # the container's own network namespace, not the host's.
+      USED=$(docker ps --format '{{.Ports}}' | grep -oE ':[0-9]+->' | tr -d ':>-' | sort -u)
+      PORT=$(comm -23 <(seq 5000 5063 | sort) <(echo "$USED" | sort -u) | sort -n | head -n 1)
+      if [ -z "$PORT" ]; then echo "no free port" >&2; exit 1; fi
       INDEX=$(($PORT - 5000))
       UDP_START=$((59000+$INDEX*100))
       UDP_END=$((59099+$INDEX*100))
       docker run -d --rm --name=${name} --memory="2g" --cpus="2" -p $PORT:$PORT -p $UDP_START-$UDP_END:$UDP_START-$UDP_END/udp ${sslMount} -l ${tag} -l index=$INDEX --log-opt max-size=1g --shm-size=1g --cap-add="SYS_ADMIN" ${sslEnv} -e DISPLAY=":99.0" -e NEKO_PASSWORD=${name} -e NEKO_PASSWORD_ADMIN=${name} -e NEKO_ADMIN_KEY=${config.VBROWSER_ADMIN_KEY} -e NEKO_BIND=":$PORT" -e NEKO_EPR=":$UDP_START-$UDP_END" -e NEKO_H264="1" ${imageName}
       `,
     );
-    console.log(stdout, stderr);
+    if (stderr) {
+      console.log("[DOCKER] startVM stderr:", stderr);
+    }
+    console.log("[DOCKER] startVM id:", stdout.trim());
     return stdout.trim();
   };
 
