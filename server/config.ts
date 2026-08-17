@@ -62,6 +62,11 @@ const defaults = {
   VBROWSER_ADMIN_KEY: "", // Optional, the key to hit admin endpoints on the vbrowser
   VBROWSER_IMAGE: "", // Optional, override the neko image (ARM64: ghcr.io/m1k1o/neko/firefox)
   VBROWSER_USE_DOCKER_SOCKET: "", // Set to "1" to run docker locally instead of over SSH
+  // Cert neko serves TLS with. Deliberately separate from SSL_CRT_FILE, which
+  // makes this server itself serve HTTPS — behind a reverse proxy we don't want that.
+  VBROWSER_SSL_CRT_FILE: "",
+  VBROWSER_SSL_KEY_FILE: "",
+  VBROWSER_SSL_MOUNT: "", // Host dir holding the certs, mounted into the neko container
   OPENSUBTITLES_KEY: "", // Optional, key to OpenSubtitles API
   SUBTITLE_LANGUAGES: "tr,en", // Comma-separated language codes to search subtitles for
 };

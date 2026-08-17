@@ -72,9 +72,13 @@ export class Docker extends VMManager {
     // insecure websocket from it. Mounting the host's letsencrypt dir (below)
     // lets it reuse the domain's existing certificate.
     const sslEnv =
-      config.SSL_KEY_FILE && config.SSL_CRT_FILE
-        ? `-e NEKO_KEY="${config.SSL_KEY_FILE}" -e NEKO_CERT="${config.SSL_CRT_FILE}"`
+      config.VBROWSER_SSL_KEY_FILE && config.VBROWSER_SSL_CRT_FILE
+        ? `-e NEKO_KEY="${config.VBROWSER_SSL_KEY_FILE}" -e NEKO_CERT="${config.VBROWSER_SSL_CRT_FILE}"`
         : "";
+    // Mount the directory holding those certs into the neko container
+    const sslMount = config.VBROWSER_SSL_MOUNT
+      ? `-v ${config.VBROWSER_SSL_MOUNT}:${config.VBROWSER_SSL_MOUNT}:ro`
+      : "";
     const { stdout, stderr } = await conn.execCommand(
       `
       #!/bin/bash
@@ -83,7 +87,7 @@ export class Docker extends VMManager {
       INDEX=$(($PORT - 5000))
       UDP_START=$((59000+$INDEX*100))
       UDP_END=$((59099+$INDEX*100))
-      docker run -d --rm --name=${name} --memory="2g" --cpus="2" -p $PORT:$PORT -p $UDP_START-$UDP_END:$UDP_START-$UDP_END/udp -v /etc/letsencrypt:/etc/letsencrypt -l ${tag} -l index=$INDEX --log-opt max-size=1g --shm-size=1g --cap-add="SYS_ADMIN" ${sslEnv} -e DISPLAY=":99.0" -e NEKO_PASSWORD=${name} -e NEKO_PASSWORD_ADMIN=${name} -e NEKO_ADMIN_KEY=${config.VBROWSER_ADMIN_KEY} -e NEKO_BIND=":$PORT" -e NEKO_EPR=":$UDP_START-$UDP_END" -e NEKO_H264="1" ${imageName}
+      docker run -d --rm --name=${name} --memory="2g" --cpus="2" -p $PORT:$PORT -p $UDP_START-$UDP_END:$UDP_START-$UDP_END/udp ${sslMount} -l ${tag} -l index=$INDEX --log-opt max-size=1g --shm-size=1g --cap-add="SYS_ADMIN" ${sslEnv} -e DISPLAY=":99.0" -e NEKO_PASSWORD=${name} -e NEKO_PASSWORD_ADMIN=${name} -e NEKO_ADMIN_KEY=${config.VBROWSER_ADMIN_KEY} -e NEKO_BIND=":$PORT" -e NEKO_EPR=":$UDP_START-$UDP_END" -e NEKO_H264="1" ${imageName}
       `,
     );
     console.log(stdout, stderr);
