@@ -67,6 +67,7 @@ const defaults = {
   VBROWSER_SSL_CRT_FILE: "",
   VBROWSER_SSL_KEY_FILE: "",
   VBROWSER_SSL_MOUNT: "", // Host dir holding the certs, mounted into the neko container
+  VBROWSER_NAT1TO1: "", // Public IP neko advertises for WebRTC (needed behind NAT)
   OPENSUBTITLES_KEY: "", // Optional, key to OpenSubtitles API
   SUBTITLE_LANGUAGES: "tr,en", // Comma-separated language codes to search subtitles for
 };

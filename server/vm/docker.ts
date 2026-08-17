@@ -83,6 +83,12 @@ export class Docker extends VMManager {
     const sslMount = config.VBROWSER_SSL_MOUNT
       ? `-v ${config.VBROWSER_SSL_MOUNT}:${config.VBROWSER_SSL_MOUNT}:ro`
       : "";
+    // Behind NAT (Oracle, most clouds) neko can't discover the address clients
+    // should connect to, so tell it explicitly. ICE-lite also halves the number
+    // of UDP ports each viewer needs.
+    const natEnv = config.VBROWSER_NAT1TO1
+      ? `-e NEKO_NAT1TO1="${config.VBROWSER_NAT1TO1}" -e NEKO_ICELITE="1"`
+      : "";
     const { stdout, stderr } = await conn.execCommand(
       `
       #!/bin/bash
@@ -96,7 +102,7 @@ export class Docker extends VMManager {
       INDEX=$(($PORT - 5000))
       UDP_START=$((59000+$INDEX*100))
       UDP_END=$((59099+$INDEX*100))
-      docker run -d --rm --name=${name} --memory="2g" --cpus="2" -p $PORT:$PORT -p $UDP_START-$UDP_END:$UDP_START-$UDP_END/udp ${sslMount} -l ${tag} -l index=$INDEX --log-opt max-size=1g --shm-size=1g --cap-add="SYS_ADMIN" ${sslEnv} -e DISPLAY=":99.0" -e NEKO_PASSWORD=${name} -e NEKO_PASSWORD_ADMIN=${name} -e NEKO_ADMIN_KEY=${config.VBROWSER_ADMIN_KEY} -e NEKO_BIND=":$PORT" -e NEKO_EPR=":$UDP_START-$UDP_END" -e NEKO_H264="1" ${imageName}
+      docker run -d --rm --name=${name} --memory="2g" --cpus="2" -p $PORT:$PORT -p $UDP_START-$UDP_END:$UDP_START-$UDP_END/udp ${sslMount} -l ${tag} -l index=$INDEX --log-opt max-size=1g --shm-size=2g --cap-add="SYS_ADMIN" ${sslEnv} ${natEnv} -e DISPLAY=":99.0" -e NEKO_PASSWORD=${name} -e NEKO_PASSWORD_ADMIN=${name} -e NEKO_ADMIN_KEY=${config.VBROWSER_ADMIN_KEY} -e NEKO_BIND=":$PORT" -e NEKO_EPR="$UDP_START-$UDP_END" -e NEKO_H264="1" ${imageName}
       `,
     );
     if (stderr) {
